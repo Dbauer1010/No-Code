@@ -5,6 +5,15 @@
       ((eq? varName (caar env)) (cadar env))
       (else (resolve varName (cdr env))))))
 
+(define extend-env
+  (lambda (lo-vars lo-vals env)
+    (cond
+      ((null? lo-vars) env)
+      (else (extend-env (cdr lo-vars)
+                        (cdr lo-vals)
+                        (cons (list (car lo-vars) (car lo-vals)) env))))))
+                              
+
 
 (define do-mathy-stuff-toaster
   (lambda (op num1 num2)
@@ -17,9 +26,16 @@
       ((eq? op '*) (* num1 num2))
       (else #f))))
 
+(define bool-stuff-toater
+  (lambda (syn a b)
+    (cond
+      ((boolean? syn 'and/) (and/s a b))
+      ((boolean? syn 'or/) (or/s a b))
+      ((boolean? syn 'not/) (not/s a b))
+      (else #f))))
+
 (define no-parser
-  (lambda lst
-    lst)
+  (lambda (no-code)
     (cond
       ((number? no-code) (list 'num-lit-exp no-code))
       ((symbol? no-code) (list 'var-exp no-code))
@@ -32,14 +48,14 @@
                    (no-parser (caddr no-code)))))
       (else (list 'call-exp
                   (no-parser (cadr no-code))
-                  (no-parser (caddr no-code))))))
+                  (map no-parser (cddr no-code)))))))
     
 (define env '((age 21) (a 7) (b 5) (c 23)))
-(define sample-no-code '(call (function (x) x) (do-mathy-stuff + a b)))
+
+(define sample-no-code '(call (function (x y) (do-mathy-stuff + x y)) (do-mathy-stuff * a b) 15))
 
 (define run-parsed-code
-  (lambda lst
-    lst)
+  (lambda (parsed-no-code env)
     (cond
       ((eq? (car parsed-no-code) 'num-lit-exp)
        (cadr parsed-no-code))
@@ -55,8 +71,15 @@
       (else
        (run-parsed-code
         (cadr parsed-no-code)
-        (cons (list (cadr (cadr (cadr parsed-no-code)))
-                    (run-parsed-code (caddr parsed-no-code) env))
-              env)))))
+        (extend-env
+         (cdr (cadr (cadr parsed-no-code)))
+         (map (lambda (packet) (run-parsed-code (car packet) (cadr packet))) (map (lambda (x) (list x env)) (caddr parsed-no-code)))
+         env))))))
 
-(run-parsed-code (no-parser sample-no-code) env)
+(define parsed-no-code (no-parser sample-no-code))
+parsed-no-code
+(run-parsed-code parsed-no-code env)
+;(question (bool-exp)
+;  do #t-no-exp
+;else
+;  #f-no-exp
