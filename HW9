@@ -133,8 +133,7 @@
         
 (define run-parsed-function-code
   (lambda (parsed-no-code-function env)
-    (run-parsed-code (cadr (caddr parsed-no-code-function)
-                           (pair? (cadr (caddr parsed-no-code))) env))))
+    (run-parsed-code (cadr (caddr parsed-no-code-function)) env)))
 
            
 (define run-parsed-code
@@ -154,6 +153,12 @@
         (cadr parsed-no-code)
         (run-parsed-code (caddr parsed-no-code) env)
         (run-parsed-code (cadddr parsed-no-code) env)))
+       ((eq? (car parsed-no-code) 'nest-exp)
+       (run-parsed-function-code
+        ((run-parsed-function-code (cadr parsed-no-code) env))
+        (extend-env
+         (map (lambda (packet) (run-parsed-code (car packet) (cadr packet))) (map (lambda (x) (list x env)) (caddr parsed-no-code)))
+         env)))
       ((eq? (car parsed-no-code) 'ask-exp)
        (if (run-parsed-boolean-code (cadr parsed-no-code) env) 
            (run-parsed-code (caddr parsed-no-code) env)
@@ -166,7 +171,10 @@
          (map (lambda (packet) (run-parsed-code (car packet) (cadr packet))) (map (lambda (x) (list x env)) (caddr parsed-no-code)))
          env))))))
 
+
 (define env '((age 21) (a 7) (b 5) (c 23)))
-(define sample-no-code '(call (function (a) (call (function (r) a) 10)) 5))
+;(((r 5)) ((a 5)) ((a 7)))
+(define sample-no-code '(call (function (a) (call (function (r) a) a)) 5))
 (define parsed-no-code (no-parser sample-no-code))
 (run-parsed-code parsed-no-code env)
+
