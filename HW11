@@ -8,7 +8,7 @@
               (if (eq? answer #f)
                   (resolve varName (cdr env))
                   answer))))))
-
+    
 (define resolve-scope
   (lambda (varName scope)
     (cond
@@ -18,6 +18,10 @@
 
 (define empty-scope '())
 
+(define construct-scope
+  (lambda (list-of-2-lists env)
+    (map (lambda (2-list) (list (car 2-list) (run-parsed-code (cadr 2-list) env))) list-of-2-lists)))
+
 (define extend-scope
   (lambda (lo-vars lo-vals scope)
     (cond
@@ -25,6 +29,7 @@
       (else (extend-scope (cdr lo-vars)
                           (cdr lo-vals)
                           (cons (list (car lo-vars) (car lo-vals)) scope))))))
+
 (define extend-env
   (lambda (scope env)
     (cons scope env)))
@@ -35,29 +40,10 @@
         env
         (pop-to-global (cdr env)))))
 
-(define env-let-get-var-names
-  (lambda (lst)
-    (if (null? lst)
-        '()
-        (cons (caar lst) (env-let-get-var-names (cdr lst))))))
 
-(define env-let-get-var-values
-  (lambda (lst)
-    (if (null? lst)
-        '()
-        (cons (cadar lst) (env-let-get-var-values (cdr lst))))))
 
-(define env-let-mapper
-  (lambda (lst)
-    (list ((env-let-get-var-names lst))
-          ((env-let-get-var-values lst)))))
+                              
 
-(define env-let
-  (lambda (lst env)
-    (list ((env-let-get-var-names lst))
-          ((env-let-get-var-values lst))
-          ((extend-env (lst env)))
-          ((extend-scope (lst lst env))))))
 
 (define do-mathy-stuff-toaster
   (lambda (op num1 num2)
@@ -69,6 +55,7 @@
       ((eq? op '%) (modulo num1 num2))
       ((eq? op '*) (* num1 num2))
       (else #f))))
+
 ; ***** PARSERS *****
 (define boolean-expression-parser
   (lambda (boolean-expression)
@@ -106,6 +93,14 @@
              (list 'body
                    (no-parser (caddr no-code-function))))))
 
+(define no-code-let-env-parser
+  (lambda (list-of-2-lists)
+    (map (lambda (2-list) (list (car 2-list) (no-parser (cadr 2-list)))) list-of-2-lists)))
+
+(define no-code-let*-env-parser
+  (lambda (list-of-2-lists)
+    (map (lambda (2-list) (list (car 2-list) (no-parser (cadr 2-list)))) list-of-2-lists)))
+
 (define no-parser
   (lambda (no-code)
     (cond
@@ -115,7 +110,11 @@
        (list 'math-exp (cadr no-code) (no-parser (caddr no-code)) (no-parser (cadddr no-code))))
       ((eq? (car no-code) 'local-vars)
        (list 'let-exp
-             (cadr no-code)
+             (no-code-let-env-parser (cadr no-code))
+             (no-parser (caddr no-code))))
+      ((eq? (car no-code) 'local-vars)
+       (list 'let*-exp
+             (no-code-let*-env-parser(caddr no-code))
              (no-parser (caddr no-code))))
       ((eq? (car no-code) 'ask)
        (list 'ask-exp
@@ -125,6 +124,7 @@
       (else (list 'call-exp
                   (no-code-function-parser (cadr no-code))
                   (map no-parser (cddr no-code)))))))
+
 ; ***** Interpreters *****
 (define run-parsed-boolean-code
   (lambda (parsed-boolean-code env)
@@ -154,12 +154,14 @@
         (run-parsed-code (cadr parsed-boolean-code) env)
         (run-parsed-code (caddr parsed-boolean-code) env))))
       (else "Not a legal boolean expression!"))))
-
+       
+        
 (define run-parsed-function-code
   (lambda (parsed-no-code-function env)
     (let ((body-of-function (cadr (caddr parsed-no-code-function))))
       (run-parsed-code body-of-function env))))
 
+           
 (define run-parsed-code
   (lambda (parsed-no-code env)
     (cond
@@ -168,37 +170,39 @@
       ((eq? (car parsed-no-code) 'var-exp)
        (resolve (cadr parsed-no-code) env))
       ((eq? (car parsed-no-code) 'let-exp)
-       (let* ((var-2-lists (env-let-mapper (cadr parsed-no-code)))
-              (new-env (extend-env (car var-2-lists) (cadr var-2-lists) env))
+       (let* ((new-scope (construct-scope (cadr parsed-no-code) env))
+              (new-env (extend-env new-scope env))
               (body (caddr parsed-no-code)))
-         (run-parsed-code body new-env)))
+         (run-parsed-code body new-env))) 
       ((eq? (car parsed-no-code) 'math-exp)
        (do-mathy-stuff-toaster
         (cadr parsed-no-code)
         (run-parsed-code (caddr parsed-no-code) env)
         (run-parsed-code (cadddr parsed-no-code) env)))
       ((eq? (car parsed-no-code) 'ask-exp)
-       (if (run-parsed-boolean-code (cadr parsed-no-code) env)
+       (if (run-parsed-boolean-code (cadr parsed-no-code) env) 
            (run-parsed-code (caddr parsed-no-code) env)
            (run-parsed-code (cadddr parsed-no-code) env)))
-      (else ;this is call lambda code stuff lol woot
-         (run-parsed-function-code
-        (cadr parsed-no-code)
-        (extend-env
+      (else ;this is call lambda code stuff lol woot WHO??
+         (let ((function (cadr parsed-no-code)))
+            (run-parsed-function-code
+             function
+             (extend-env
+         (let ((list-of-var-names (cdr (cadr (cadr parsed-no-code))))
+               (list-of-var-values (map (lambda (packet) (run-parsed-code (car packet) (cadr packet)))
+              (map (lambda (x) (list x env)) (caddr parsed-no-code)))))
          (extend-scope
-          (env-let
-         (cdr (cadr (cadr parsed-no-code)))
-         (map (lambda (packet) (run-parsed-code (car packet) (cadr packet)))
-              (map (lambda (x) (list x env)) (caddr parsed-no-code)))
-         empty-scope)
+          list-of-var-names
+          list-of-var-values
+          empty-scope))
          (pop-to-global env))))))))
 
-(define env '((global (age 21) (a 7) (b 5) (c 23))))
-;(define sample-no-code '(call (function (a) (call (function (r) a) a)) 5))
+(define env '((global (age 21) (a 2) (b 5) (c 23))))
+;(define sample-no-code '(call (function (a) (call (function (a) a) age)) 5))
+;(define sample-let-no-code '(local-vars ((a 2) (b 3)) (local-vars ((a (do-mathy-stuff * a 4)) (r 5)) (do-mathy-stuff + a b))))
 ;(define parsed-no-code (no-parser sample-no-code))
+;parsed-no-code
 ;(run-parsed-code parsed-no-code env)
-
-(let ((a 2) (b 3))
-  (let ((c 4) (d 5) (a d))
-       (+ b a)))
-
+(define sample-let*-no-code '(local-vars ((a 2) (b a)) b))
+(define parsed-sample-let-no-code(no-parser sample-let*-no-code))
+(run-parsed-code parsed-sample-let-no-code env)
